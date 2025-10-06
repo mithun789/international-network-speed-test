@@ -212,6 +212,19 @@ Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser
 - Comprehensive diagnostic reporting
 - User-friendly launcher interface
 
+---
+
+## Release Notes
+
+Version 1.0.0 (2025-10-06)
+
+- Initial public release. Includes:
+  - Web-based international speed test (`speed-test.html`, `speed-test.js`)
+  - PowerShell diagnostics with CSV/trace exports (`network-diagnostics.ps1`)
+  - Robust export handling and better error reporting
+  - GitHub Actions workflow for PowerShell linting
+
+
 ## 📞 Support
 
 This tool is designed to be self-contained and require no external support. All diagnostics and help information are included in the interface.
