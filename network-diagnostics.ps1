@@ -26,10 +26,10 @@ $TestServers = @(
     @{Name="Stack Overflow"; Host="stackoverflow.com"; Location="Global"}
 )
 
-# Create results array
-$DiagnosticResults = @()
-$PingResults = @()
-$TraceResults = @()
+# Create results containers
+$DiagnosticResults = New-Object System.Collections.ArrayList
+$PingResults = New-Object System.Collections.ArrayList
+$TraceResults = New-Object System.Collections.ArrayList
 
 function Write-Section {
     param([string]$Title)
@@ -102,7 +102,7 @@ function Test-InternationalPing {
             Write-Host "  Min/Max: $minPing ms / $maxPing ms"
             Write-Host "  Packet Loss: $packetLoss%"
             
-            $PingResults += [PSCustomObject]@{
+            $obj = [PSCustomObject]@{
                 Server = $server.Name
                 Location = $server.Location
                 Host = $server.Host
@@ -112,10 +112,11 @@ function Test-InternationalPing {
                 PacketLoss = $packetLoss
                 Timestamp = (Get-Date).ToString()
             }
+            [void]$PingResults.Add($obj)
         }
         catch {
             Write-Host "  FAILED TO REACH SERVER" -ForegroundColor Red
-            $PingResults += [PSCustomObject]@{
+            $obj = [PSCustomObject]@{
                 Server = $server.Name
                 Location = $server.Location
                 Host = $server.Host
@@ -125,6 +126,7 @@ function Test-InternationalPing {
                 PacketLoss = 100
                 Timestamp = (Get-Date).ToString()
             }
+            [void]$PingResults.Add($obj)
         }
         Write-Host ""
     }
@@ -157,7 +159,7 @@ function Test-Traceroute {
                 }
             }
             
-            $TraceResults += [PSCustomObject]@{
+            $tobj = [PSCustomObject]@{
                 Server = $server.Name
                 Host = $server.Host
                 HopCount = $traceResult.TraceRoute.Count
@@ -166,6 +168,7 @@ function Test-Traceroute {
                 Route = ($traceResult.TraceRoute -join " -> ")
                 Timestamp = (Get-Date).ToString()
             }
+            [void]$TraceResults.Add($tobj)
         }
         catch {
             Write-Host "  TRACEROUTE FAILED" -ForegroundColor Red
@@ -287,11 +290,26 @@ function Get-SystemNetworkInfo {
 function Export-Results {
     Write-Section "Exporting Results"
     
-    # Ensure output directory exists
-    $outputDir = Split-Path $OutputPath -Parent
-    if (-not (Test-Path $outputDir)) {
-        New-Item -ItemType Directory -Path $outputDir -Force | Out-Null
+    # Build an absolute output path. If $OutputPath is relative, write into current directory.
+    $isRooted = [System.IO.Path]::IsPathRooted($OutputPath)
+    if ($isRooted) {
+        try {
+            $OutputPathFull = (Resolve-Path -LiteralPath $OutputPath -ErrorAction Stop).Path
+        }
+        catch {
+            # If resolve fails, use the literal provided absolute path
+            $OutputPathFull = $OutputPath
+        }
     }
+    else {
+        $fileName = Split-Path $OutputPath -Leaf
+        $outputDir = (Get-Location).Path
+        $OutputPathFull = Join-Path -Path $outputDir -ChildPath $fileName
+    }
+
+    # Ensure parent directory exists
+    $outDir = Split-Path -Path $OutputPathFull -Parent
+    if (-not (Test-Path $outDir)) { New-Item -ItemType Directory -Path $outDir -Force | Out-Null }
     
     # Create comprehensive report
     $report = @"
@@ -313,8 +331,8 @@ $($TraceResults | Format-Table -AutoSize | Out-String)
 
     # Save detailed report
     try {
-        $report | Out-File -FilePath $OutputPath -Encoding UTF8 -Force
-        Write-Host "Detailed report saved to: $OutputPath" -ForegroundColor Green
+        [System.IO.File]::WriteAllText($OutputPathFull, $report, [System.Text.Encoding]::UTF8)
+        Write-Host "Detailed report saved to: $OutputPathFull" -ForegroundColor Green
     }
     catch {
         Write-Host "Failed to save report: $($_.Exception.Message)" -ForegroundColor Red
@@ -323,7 +341,7 @@ $($TraceResults | Format-Table -AutoSize | Out-String)
     # Export CSV if requested
     if ($ExportCSV -and $PingResults.Count -gt 0) {
         try {
-            $csvPath = $OutputPath.Replace('.txt', '-ping-results.csv')
+            $csvPath = (Join-Path -Path $outputDir -ChildPath ((Split-Path $OutputPath -Leaf).Replace('.txt','-ping-results.csv')))
             $PingResults | Export-Csv -Path $csvPath -NoTypeInformation -Force
             Write-Host "Ping results CSV saved to: $csvPath" -ForegroundColor Green
         }
@@ -332,7 +350,7 @@ $($TraceResults | Format-Table -AutoSize | Out-String)
         }
         
         try {
-            $traceCsvPath = $OutputPath.Replace('.txt', '-trace-results.csv')
+            $traceCsvPath = (Join-Path -Path $outputDir -ChildPath ((Split-Path $OutputPath -Leaf).Replace('.txt','-trace-results.csv')))
             if ($TraceResults.Count -gt 0) {
                 $TraceResults | Export-Csv -Path $traceCsvPath -NoTypeInformation -Force
                 Write-Host "Traceroute results CSV saved to: $traceCsvPath" -ForegroundColor Green
